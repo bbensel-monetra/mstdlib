@@ -437,7 +437,7 @@ static M_state_machine_status_t M_state_machine_run_states(M_state_machine_t *ma
 	M_state_machine_state_t  *state;
 	void                     *vp;
 	M_uint64                  next_id;
-	size_t                    idx;
+	size_t                    state_idx;
 	M_bool                    run_sub;
 	M_state_machine_status_t  status;
 	size_t                    len;
@@ -527,15 +527,15 @@ static M_state_machine_status_t M_state_machine_run_states(M_state_machine_t *ma
 		/* We only use the linear next auto filling if the state machine doesn't require
 		 * an explicit transition to be set by the current state. */
 		if (!(current->flags & M_STATE_MACHINE_EXPLICIT_NEXT)) {
-			if (!M_list_u64_index_of(current->state_ids, current->current_id, &idx)) {
+			if (!M_list_u64_index_of(current->state_ids, current->current_id, &state_idx)) {
 				/* Id does not exist in our list of ids so we can't figure out what's next. */
 				current->cleanup_reason = M_STATE_MACHINE_CLEANUP_REASON_ERROR;
 				current->return_status  = M_STATE_MACHINE_STATUS_ERROR_BAD_ID;
 				continue;
 			}
-			/* Set the id to the next id if it's not last */
-			if (idx != M_list_u64_len(current->state_ids)-1) {
-				next_id = M_list_u64_at(current->state_ids, idx+1);
+			/* Set the id to the next id if it's not last. We try again below to catch states added while running. */
+			if (state_idx != M_list_u64_len(current->state_ids)-1) {
+				next_id = M_list_u64_at(current->state_ids, state_idx+1);
 			}
 		}
 
@@ -746,6 +746,15 @@ static M_state_machine_status_t M_state_machine_run_states(M_state_machine_t *ma
 				if (sub_pause && status == M_STATE_MACHINE_STATUS_PAUSE) {
 					M_state_machine_clear_continuations(current);
 					return status;
+				}
+
+				/* Try again to determine the auto next state. New states may have been added while we were running the
+				 * current state. */
+				if (next_id == 0 && !(current->flags & M_STATE_MACHINE_EXPLICIT_NEXT)) {
+					/* Set the id to the next id if it's not last */
+					if (state_idx != M_list_u64_len(current->state_ids)-1) {
+						next_id = M_list_u64_at(current->state_ids, state_idx+1);
+					}
 				}
 
 				/* Check that we have a valid transition. */
